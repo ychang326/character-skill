@@ -1,5 +1,5 @@
 ---
-name: colleague-creator
+name: create-colleague
 description: 把同事蒸馏成 AI Skill。输入姓名自动采集飞书/钉钉数据，生成 Work Skill + Persona 两部分，支持持续进化。
 argument-hint: "[colleague-name-or-slug]"
 version: "1.0.0"

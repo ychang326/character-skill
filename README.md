@@ -102,13 +102,18 @@
 
 ### 1. 安装
 
+> **注意**：Claude Code 从 **git 仓库根目录** 的 `.claude/skills/` 查找 skill。请确保在正确的位置安装。
+
 ```bash
+# 先 cd 到你的 git 仓库根目录
+cd $(git rev-parse --show-toplevel)
+
 # 安装到当前项目
 mkdir -p .claude/skills
-git clone https://github.com/titanwings/colleague-skill .claude/skills/colleague-creator
+git clone https://github.com/titanwings/colleague-skill .claude/skills/create-colleague
 
-# 或安装到全局（所有项目可用）
-git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/colleague-creator
+# 或安装到全局（所有项目都能用）
+git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/create-colleague
 ```
 
 > OpenClaw 用户请参考 [INSTALL.md](INSTALL.md)

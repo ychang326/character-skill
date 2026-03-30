@@ -9,12 +9,15 @@
 本项目遵循官方 [AgentSkills](https://agentskills.io) 标准，整个 repo 就是 skill 目录。克隆到 Claude skills 目录即可：
 
 ```bash
-# 方式 1：放到当前项目的 .claude/skills/ 目录下
-mkdir -p .claude/skills
-git clone https://github.com/titanwings/colleague-skill .claude/skills/colleague-creator
+# ⚠️ 必须在 git 仓库根目录执行！
+cd $(git rev-parse --show-toplevel)
 
-# 方式 2：放到全局目录，所有项目都能用
-git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/colleague-creator
+# 方式 1：安装到当前项目
+mkdir -p .claude/skills
+git clone https://github.com/titanwings/colleague-skill .claude/skills/create-colleague
+
+# 方式 2：安装到全局（所有项目都能用）
+git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/create-colleague
 ```
 
 然后在 Claude Code 中说 `/create-colleague` 即可启动。
