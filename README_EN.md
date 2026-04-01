@@ -56,6 +56,7 @@ and get an **AI Skill that actually works like them**
 | Feishu (auto) | ✅ API | ✅ | ✅ | Just enter a name, fully automatic |
 | DingTalk (auto) | ⚠️ Browser | ✅ | ✅ | DingTalk API doesn't support message history |
 | Slack (auto) | ✅ API | — | — | Requires admin to install Bot; free plan limited to 90 days |
+| WeChat chat history | ✅ SQLite | — | — | Currently unstable, recommend using open-source tools below |
 | PDF | — | ✅ | — | Manual upload |
 | Images / Screenshots | ✅ | — | — | Manual upload |
 | Feishu JSON export | ✅ | ✅ | — | Manual upload |
@@ -63,9 +64,9 @@ and get an **AI Skill that actually works like them**
 | Markdown | ✅ | ✅ | — | Manual upload |
 | Paste text directly | ✅ | — | — | Manual input |
 
-### Recommended Chat Export Tools
+### Recommended WeChat Chat Export Tools
 
-These are independent open-source projects — this project does not include their code, but our parsers are compatible with their export formats. Export chat history with these tools, then paste or import into this project:
+These are independent open-source projects — this project does not include their code, but our parsers are compatible with their export formats. WeChat auto-decryption is currently unstable, so we recommend using these open-source tools to export chat history, then paste or import into this project:
 
 | Tool | Platform | Description |
 |------|----------|-------------|
