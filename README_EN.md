@@ -63,6 +63,20 @@ and get an **AI Skill that actually works like them**
 | Markdown | ✅ | ✅ | — | Manual upload |
 | Paste text directly | ✅ | — | — | Manual input |
 
+### Recommended Chat Export Tools
+
+> The auto-decryption feature is still being improved and may have some bugs. If auto-decryption fails, you can use the following open-source tools to manually export chat history, then paste or import it into this project.
+
+These are independent open-source projects — this project does not include their code, but our parsers are compatible with their export formats:
+
+| Tool | Platform | Description |
+|------|----------|-------------|
+| [WeChatMsg](https://github.com/LC044/WeChatMsg) | Windows | WeChat chat history export, supports multiple formats |
+| [PyWxDump](https://github.com/xaoyaoo/PyWxDump) | Windows | WeChat database decryption & export |
+| [留痕 (Liuhen)](https://github.com/greyovo/留痕) | macOS | WeChat chat history export (recommended for Mac users) |
+
+> Tool recommendations from [@therealXiaomanChu](https://github.com/therealXiaomanChu). Thanks to all the open-source authors — together for cyber-immortality!
+
 ---
 
 ## Install

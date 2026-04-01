@@ -63,6 +63,20 @@
 | Markdown | ✅ | ✅ | — | 手动上传 |
 | 直接粘贴文字 | ✅ | — | — | 手动输入 |
 
+### 推荐的聊天记录导出工具
+
+> 自动解密功能目前仍在完善中，可能存在一些小 bug。如果自动解密失败，可以先用以下开源工具手动导出聊天记录，再粘贴或导入到本项目中使用。
+
+以下工具为独立的开源项目，本项目不包含它们的代码，仅在解析器中适配了它们的导出格式：
+
+| 工具 | 平台 | 说明 |
+|------|------|------|
+| [WeChatMsg](https://github.com/LC044/WeChatMsg) | Windows | 微信聊天记录导出，支持多种格式 |
+| [PyWxDump](https://github.com/xaoyaoo/PyWxDump) | Windows | 微信数据库解密导出 |
+| [留痕](https://github.com/greyovo/留痕) | macOS | 微信聊天记录导出（Mac 用户推荐） |
+
+> 工具信息来自 [@therealXiaomanChu](https://github.com/therealXiaomanChu)，感谢各位开源作者，一起助力赛博永生！
+
 ---
 
 ## 安装
