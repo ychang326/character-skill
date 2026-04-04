@@ -33,6 +33,14 @@
 
 > **April 4th Update：** 新增了两个示例同事——一个做安全的工程师和一个有趣的 HR，在 `colleagues/` 目录下，欢迎体验！
 
+### 📄 技术论文
+
+> **[Colleague.Skill: Automated AI Skill Generation via Expert Knowledge Distillation](colleague_skill.pdf)**
+>
+> 我们写了一篇论文，详细介绍了同事.skill 的系统设计、两层架构（Work Skill + Persona）、多源数据采集、Skill 生成与进化机制，以及在真实场景中的评估结果。感兴趣的话可以看看！
+
+---
+
 ## 支持的数据来源
 
 > 目前还是同事.skill 的 beta 测试版本，后续会有更多来源支持，请多多关注！
