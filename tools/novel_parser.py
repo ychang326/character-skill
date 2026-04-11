@@ -98,7 +98,10 @@ def split_chapters(lines: list[str]) -> list[Chapter]:
         chapters.append(ch)
 
     for i, raw in enumerate(lines):
-        line = raw.strip()
+        # strip ASCII whitespace AND ideographic space \u3000 (全角空格),
+        # which Python's built-in strip() does not remove but appears as
+        # indentation in many downloaded novel TXT files from chapter 45+
+        line = raw.strip().strip('\u3000').strip()
         if not line:
             continue
 
