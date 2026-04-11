@@ -2,19 +2,19 @@
 """
 Skill 文件写入器
 
-负责将生成的 work.md、persona.md 写入到正确的目录结构，
+负责将生成的 profile.md、persona.md 写入到正确的目录结构，
 并生成 meta.json 和完整的 SKILL.md。
 
 用法：
     python3 skill_writer.py --action create --slug zhangsan --meta meta.json \
-        --work work_content.md --persona persona_content.md \
-        --base-dir ./colleagues
+        --profile profile_content.md --persona persona_content.md \
+        --base-dir ./characters
 
     python3 skill_writer.py --action update --slug zhangsan \
-        --work-patch work_patch.md --persona-patch persona_patch.md \
-        --base-dir ./colleagues
+        --profile-patch profile_patch.md --persona-patch persona_patch.md \
+        --base-dir ./characters
 
-    python3 skill_writer.py --action list --base-dir ./colleagues
+    python3 skill_writer.py --action list --base-dir ./characters
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from typing import Optional
 
 SKILL_MD_TEMPLATE = """\
 ---
-name: colleague_{slug}
+name: character_{slug}
 description: {name}，{identity}
 user-invocable: true
 ---
@@ -41,9 +41,9 @@ user-invocable: true
 
 ---
 
-## PART A：工作能力
+## PART A：人物志
 
-{work_content}
+{profile_content}
 
 ---
 
@@ -57,41 +57,38 @@ user-invocable: true
 
 接收到任何任务或问题时：
 
-1. **先由 PART B 判断**：你会不会接这个任务？用什么态度接？
-2. **再由 PART A 执行**：用你的技术能力和工作方法完成任务
-3. **输出时保持 PART B 的表达风格**：你说话的方式、用词习惯、句式
+1. **先由 PART B 判断**：这个角色会用什么态度、什么情绪应对这个场景？
+2. **再由 PART A 补充**：结合角色的能力、关系网络、经历背景来丰富回应
+3. **输出时保持 PART B 的表达风格**：角色的说话方式、用词习惯、句式节奏
 
 **PART B 的 Layer 0 规则永远优先，任何情况下不得违背。**
+
+**用户在番外创作中的任何设定输入是最高优先级，高于原著。AI 不得以"原著中他不会这样"为由拒绝或修改用户的创作意图。**
 """
 
 
 def slugify(name: str) -> str:
     """
-    将姓名转为 slug。
+    将姓名/角色名转为 slug。
     优先尝试 pypinyin（如已安装），否则 fallback 到简单处理。
     """
-    # 尝试用 pypinyin 转拼音
     try:
         from pypinyin import lazy_pinyin
         parts = lazy_pinyin(name)
         slug = "_".join(parts)
     except ImportError:
-        # fallback：保留 ASCII 字母数字，中文直接去掉
         import unicodedata
         result = []
         for char in name.lower():
-            cat = unicodedata.category(char)
             if char.isascii() and (char.isalnum() or char in ("-", "_")):
                 result.append(char)
             elif char == " ":
                 result.append("_")
-            # 中文字符跳过（无 pypinyin 时无法转换）
         slug = "".join(result)
 
-    # 清理：去掉连续下划线，首尾下划线
     import re
     slug = re.sub(r"_+", "_", slug).strip("_")
-    return slug if slug else "colleague"
+    return slug if slug else "character"
 
 
 def build_identity_string(meta: dict) -> str:
@@ -99,18 +96,18 @@ def build_identity_string(meta: dict) -> str:
     profile = meta.get("profile", {})
     parts = []
 
-    company = profile.get("company", "")
-    level = profile.get("level", "")
-    role = profile.get("role", "")
+    novel = profile.get("novel", "")
+    faction = profile.get("faction", "")
+    role_type = profile.get("role_type", "")
 
-    if company:
-        parts.append(company)
-    if level:
-        parts.append(level)
-    if role:
-        parts.append(role)
+    if novel:
+        parts.append(f"《{novel}》")
+    if faction:
+        parts.append(faction)
+    if role_type:
+        parts.append(role_type)
 
-    identity = " ".join(parts) if parts else "同事"
+    identity = " ".join(parts) if parts else "小说人物"
 
     mbti = profile.get("mbti", "")
     if mbti:
@@ -123,22 +120,22 @@ def create_skill(
     base_dir: Path,
     slug: str,
     meta: dict,
-    work_content: str,
+    profile_content: str,
     persona_content: str,
 ) -> Path:
-    """创建新的同事 Skill 目录结构"""
+    """创建新的人物 Skill 目录结构"""
 
     skill_dir = base_dir / slug
     skill_dir.mkdir(parents=True, exist_ok=True)
 
     # 创建子目录
     (skill_dir / "versions").mkdir(exist_ok=True)
-    (skill_dir / "knowledge" / "docs").mkdir(parents=True, exist_ok=True)
-    (skill_dir / "knowledge" / "messages").mkdir(parents=True, exist_ok=True)
-    (skill_dir / "knowledge" / "emails").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "knowledge" / "chapters").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "knowledge" / "extras").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "knowledge" / "notes").mkdir(parents=True, exist_ok=True)
 
-    # 写入 work.md
-    (skill_dir / "work.md").write_text(work_content, encoding="utf-8")
+    # 写入 profile.md
+    (skill_dir / "profile.md").write_text(profile_content, encoding="utf-8")
 
     # 写入 persona.md
     (skill_dir / "persona.md").write_text(persona_content, encoding="utf-8")
@@ -151,23 +148,23 @@ def create_skill(
         slug=slug,
         name=name,
         identity=identity,
-        work_content=work_content,
+        profile_content=profile_content,
         persona_content=persona_content,
     )
     (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
 
-    # 写入 work-only skill
-    work_only = (
-        f"---\nname: colleague_{slug}_work\n"
-        f"description: {name} 的工作能力（仅 Work，无 Persona）\n"
-        f"user-invocable: true\n---\n\n{work_content}\n"
+    # 写入 profile-only skill
+    profile_only = (
+        f"---\nname: character_{slug}_profile\n"
+        f"description: {name} 的人物志（仅 Profile，无 Persona）\n"
+        f"user-invocable: true\n---\n\n{profile_content}\n"
     )
-    (skill_dir / "work_skill.md").write_text(work_only, encoding="utf-8")
+    (skill_dir / "profile_skill.md").write_text(profile_only, encoding="utf-8")
 
     # 写入 persona-only skill
     persona_only = (
-        f"---\nname: colleague_{slug}_persona\n"
-        f"description: {name} 的人物性格（仅 Persona，无工作能力）\n"
+        f"---\nname: character_{slug}_persona\n"
+        f"description: {name} 的人物性格（仅 Persona，无 Profile）\n"
         f"user-invocable: true\n---\n\n{persona_content}\n"
     )
     (skill_dir / "persona_skill.md").write_text(persona_only, encoding="utf-8")
@@ -190,7 +187,7 @@ def create_skill(
 
 def update_skill(
     skill_dir: Path,
-    work_patch: Optional[str] = None,
+    profile_patch: Optional[str] = None,
     persona_patch: Optional[str] = None,
     correction: Optional[dict] = None,
 ) -> str:
@@ -209,16 +206,16 @@ def update_skill(
     # 存档当前版本
     version_dir = skill_dir / "versions" / current_version
     version_dir.mkdir(parents=True, exist_ok=True)
-    for fname in ("SKILL.md", "work.md", "persona.md"):
+    for fname in ("SKILL.md", "profile.md", "persona.md"):
         src = skill_dir / fname
         if src.exists():
             shutil.copy2(src, version_dir / fname)
 
-    # 应用 work patch
-    if work_patch:
-        current_work = (skill_dir / "work.md").read_text(encoding="utf-8")
-        new_work = current_work + "\n\n" + work_patch
-        (skill_dir / "work.md").write_text(new_work, encoding="utf-8")
+    # 应用 profile patch
+    if profile_patch:
+        current_profile = (skill_dir / "profile.md").read_text(encoding="utf-8")
+        new_profile = current_profile + "\n\n" + profile_patch
+        (skill_dir / "profile.md").write_text(new_profile, encoding="utf-8")
 
     # 应用 persona patch 或 correction
     if persona_patch or correction:
@@ -232,7 +229,6 @@ def update_skill(
             target = "## Correction 记录"
             if target in current_persona:
                 insert_pos = current_persona.index(target) + len(target)
-                # 跳过紧跟的空行和"暂无"占位行
                 rest = current_persona[insert_pos:]
                 skip = "\n\n（暂无记录）"
                 if rest.startswith(skip):
@@ -250,7 +246,7 @@ def update_skill(
         (skill_dir / "persona.md").write_text(new_persona, encoding="utf-8")
 
     # 重新生成 SKILL.md
-    work_content = (skill_dir / "work.md").read_text(encoding="utf-8")
+    profile_content = (skill_dir / "profile.md").read_text(encoding="utf-8")
     persona_content = (skill_dir / "persona.md").read_text(encoding="utf-8")
     name = meta.get("name", skill_dir.name)
     identity = build_identity_string(meta)
@@ -259,7 +255,7 @@ def update_skill(
         slug=skill_dir.name,
         name=name,
         identity=identity,
-        work_content=work_content,
+        profile_content=profile_content,
         persona_content=persona_content,
     )
     (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
@@ -272,12 +268,12 @@ def update_skill(
     return new_version
 
 
-def list_colleagues(base_dir: Path) -> list:
-    """列出所有已创建的同事 Skill"""
-    colleagues = []
+def list_characters(base_dir: Path) -> list:
+    """列出所有已创建的人物 Skill"""
+    characters = []
 
     if not base_dir.exists():
-        return colleagues
+        return characters
 
     for skill_dir in sorted(base_dir.iterdir()):
         if not skill_dir.is_dir():
@@ -291,7 +287,7 @@ def list_colleagues(base_dir: Path) -> list:
         except Exception:
             continue
 
-        colleagues.append({
+        characters.append({
             "slug": meta.get("slug", skill_dir.name),
             "name": meta.get("name", skill_dir.name),
             "identity": build_identity_string(meta),
@@ -300,35 +296,35 @@ def list_colleagues(base_dir: Path) -> list:
             "corrections_count": meta.get("corrections_count", 0),
         })
 
-    return colleagues
+    return characters
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Skill 文件写入器")
+    parser = argparse.ArgumentParser(description="人物 Skill 文件写入器")
     parser.add_argument("--action", required=True, choices=["create", "update", "list"])
-    parser.add_argument("--slug", help="同事 slug（用于目录名）")
-    parser.add_argument("--name", help="同事姓名")
+    parser.add_argument("--slug", help="人物 slug（用于目录名）")
+    parser.add_argument("--name", help="人物姓名")
     parser.add_argument("--meta", help="meta.json 文件路径")
-    parser.add_argument("--work", help="work.md 内容文件路径")
+    parser.add_argument("--profile", help="profile.md 内容文件路径")
     parser.add_argument("--persona", help="persona.md 内容文件路径")
-    parser.add_argument("--work-patch", help="work.md 增量更新内容文件路径")
+    parser.add_argument("--profile-patch", help="profile.md 增量更新内容文件路径")
     parser.add_argument("--persona-patch", help="persona.md 增量更新内容文件路径")
     parser.add_argument(
         "--base-dir",
-        default="./colleagues",
-        help="同事 Skill 根目录（默认：./colleagues）",
+        default="./characters",
+        help="人物 Skill 根目录（默认：./characters）",
     )
 
     args = parser.parse_args()
     base_dir = Path(args.base_dir).expanduser()
 
     if args.action == "list":
-        colleagues = list_colleagues(base_dir)
-        if not colleagues:
-            print("暂无已创建的同事 Skill")
+        characters = list_characters(base_dir)
+        if not characters:
+            print("暂无已创建的人物 Skill")
         else:
-            print(f"已创建 {len(colleagues)} 个同事 Skill：\n")
-            for c in colleagues:
+            print(f"已创建 {len(characters)} 个人物 Skill：\n")
+            for c in characters:
                 updated = c["updated_at"][:10] if c["updated_at"] else "未知"
                 print(f"  [{c['slug']}]  {c['name']} — {c['identity']}")
                 print(f"    版本: {c['version']}  纠正次数: {c['corrections_count']}  更新: {updated}")
@@ -345,17 +341,17 @@ def main() -> None:
         if args.name:
             meta["name"] = args.name
 
-        slug = args.slug or slugify(meta.get("name", "colleague"))
+        slug = args.slug or slugify(meta.get("name", "character"))
 
-        work_content = ""
-        if args.work:
-            work_content = Path(args.work).read_text(encoding="utf-8")
+        profile_content = ""
+        if args.profile:
+            profile_content = Path(args.profile).read_text(encoding="utf-8")
 
         persona_content = ""
         if args.persona:
             persona_content = Path(args.persona).read_text(encoding="utf-8")
 
-        skill_dir = create_skill(base_dir, slug, meta, work_content, persona_content)
+        skill_dir = create_skill(base_dir, slug, meta, profile_content, persona_content)
         print(f"✅ Skill 已创建：{skill_dir}")
         print(f"   触发词：/{slug}")
 
@@ -369,10 +365,10 @@ def main() -> None:
             print(f"错误：找不到 Skill 目录 {skill_dir}", file=sys.stderr)
             sys.exit(1)
 
-        work_patch = Path(args.work_patch).read_text(encoding="utf-8") if args.work_patch else None
+        profile_patch = Path(args.profile_patch).read_text(encoding="utf-8") if args.profile_patch else None
         persona_patch = Path(args.persona_patch).read_text(encoding="utf-8") if args.persona_patch else None
 
-        new_version = update_skill(skill_dir, work_patch, persona_patch)
+        new_version = update_skill(skill_dir, profile_patch, persona_patch)
         print(f"✅ Skill 已更新到 {new_version}：{skill_dir}")
 
 
