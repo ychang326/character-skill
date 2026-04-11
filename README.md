@@ -1,258 +1,106 @@
-<div align="center">
+# character-skill
 
-# colleague.skill
+把小说人物蒸馏成可对话的 AI Skill。提供 TXT 原著文件，自动提取角色文本、调用 Gemini API 分析性格，生成可持续进化的人物志与性格层。
 
-> *"You AI guys are traitors to the codebase — you've already killed frontend, now you're coming for backend, QA, ops, infosec, chip design, and eventually yourselves and all of humanity"*
+## 功能
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet)](https://claude.ai/code)
-[![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-green)](https://agentskills.io)
+- **创建人物设定卡**：从 TXT 原著中提取角色相关段落，通过 Gemini API 生成 Profile（人物志）+ Persona（性格层）
+- **持续进化**：追加新章节或纠错后，自动合并更新设定卡，保留版本历史
+- **番外创作辅助**：以原著人物为基底，辅助推进 What-If 场景创作
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/aRjmJBdK)
+## 快速开始
 
-<br>
-
-Your colleague quit, leaving behind a mountain of unmaintained docs?<br>
-Your intern left, nothing but an empty desk and a half-finished project?<br>
-Your mentor graduated, taking all the context and experience with them?<br>
-Your partner transferred, and the chemistry you built reset to zero overnight?<br>
-Your predecessor handed over, trying to condense three years into three pages?<br>
-
-**Turn cold goodbyes into warm Skills — welcome to cyber-immortality!**
-
-<br>
-
-Provide source materials (Feishu messages, DingTalk docs, Slack messages, emails, screenshots)<br>
-plus your subjective description of the person<br>
-and get an **AI Skill that actually works like them**
-
-[Supported Sources](#supported-data-sources) · [Install](#install) · [Usage](#usage) · [Demo](#demo) · [Detailed Install](INSTALL.md) · [💬 Discord](https://discord.gg/aRjmJBdK)
-
-[**中文**](README_ZH.md) · [**Español**](README_ES.md) · [**Deutsch**](README_DE.md) · [**日本語**](README_JA.md) · [**Русский**](README_RU.md) · [**Português**](README_PT.md)
-
-</div>
-
----
-
-> 🆕 **2025.04.07 Update** — The community's enthusiasm for dot-skill remixes has been incredible! I've built a community gallery — PRs welcome!
->
-> Share any skill or meta-skill, and drive traffic directly to your own GitHub repo. No middleman.
->
-> 👉 **[titanwings.github.io/colleague-skill-site](https://titanwings.github.io/colleague-skill-site/)** · **[💬 Discord](https://discord.gg/aRjmJBdK)**
->
-> Now listed: 户晨风.skill · 峰哥亡命天涯.skill · 罗翔.skill and more
->
-> ⏳ PRs are manually reviewed for now — may be a bit slow, thanks for your patience!/ PRs are manually reviewed for now — may be a bit slow, thanks for your patience!
-
----
-
-Created by [@titanwings](https://github.com/titanwings) | Powered by Shanghai AI Lab · AI Safety Center
-
-## Supported Data Sources
-
-> This is still a beta version of colleague.skill — more sources coming soon, stay tuned!
-
-| Source | Messages | Docs / Wiki | Spreadsheets | Notes |
-|--------|:--------:|:-----------:|:------------:|-------|
-| Feishu (auto) | ✅ API | ✅ | ✅ | Just enter a name, fully automatic |
-| DingTalk (auto) | ⚠️ Browser | ✅ | ✅ | DingTalk API doesn't support message history |
-| Slack (auto) | ✅ API | — | — | Requires admin to install Bot; free plan limited to 90 days |
-| WeChat chat history | ✅ SQLite | — | — | Currently unstable, recommend using open-source tools below |
-| PDF | — | ✅ | — | Manual upload |
-| Images / Screenshots | ✅ | — | — | Manual upload |
-| Feishu JSON export | ✅ | ✅ | — | Manual upload |
-| Email `.eml` / `.mbox` | ✅ | — | — | Manual upload |
-| Markdown | ✅ | ✅ | — | Manual upload |
-| Paste text directly | ✅ | — | — | Manual input |
-
-### Recommended WeChat Chat Export Tools
-
-These are independent open-source projects — this project does not include their code, but our parsers are compatible with their export formats. WeChat auto-decryption is currently unstable, so we recommend using these open-source tools to export chat history, then paste or import into this project:
-
-| Tool | Platform | Description |
-|------|----------|-------------|
-| [WeChatMsg](https://github.com/LC044/WeChatMsg) | Windows | WeChat chat history export, supports multiple formats |
-| [PyWxDump](https://github.com/xaoyaoo/PyWxDump) | Windows | WeChat database decryption & export |
-| [留痕 (Liuhen)](https://github.com/greyovo/留痕) | macOS | WeChat chat history export (recommended for Mac users) |
-
-> Tool recommendations from [@therealXiaomanChu](https://github.com/therealXiaomanChu). Thanks to all the open-source authors — together for cyber-immortality!
-
----
-
-## Install
-
-### Claude Code
-
-> **Important**: Claude Code looks for skills in `.claude/skills/` at the **git repo root**. Make sure you run this in the right place.
+### 环境要求
 
 ```bash
-# Install to current project (run at git repo root)
-mkdir -p .claude/skills
-git clone https://github.com/titanwings/colleague-skill .claude/skills/create-colleague
-
-# Or install globally (available in all projects)
-git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/create-colleague
+pip install requests pypinyin
 ```
 
-### OpenClaw
+需要配置 Gemini API Key：
 
 ```bash
-git clone https://github.com/titanwings/colleague-skill ~/.openclaw/workspace/skills/create-colleague
+export GEMINI_API_KEY=your_key_here
 ```
 
-### Dependencies (optional)
+### 安装为 Claude Code Skill
 
 ```bash
-pip3 install -r requirements.txt
+# 克隆到 Claude Code skills 目录
+git clone https://github.com/ychang326/character-skill ~/.claude/skills/character-skill
 ```
 
-> Feishu/DingTalk/Slack auto-collection requires App credentials. See [INSTALL.md](INSTALL.md) for details.
+### 使用
 
----
-
-## Usage
-
-In Claude Code, type:
+在 Claude Code 中输入：
 
 ```
-/create-colleague
+/create-character          # 创建新人物设定卡
+/update-character {slug}   # 追加章节或纠错
+/list-characters           # 列出所有已生成的人物设定卡
+/whatif                    # 进入番外创作辅助模式
 ```
 
-Follow the prompts: enter an alias, company/level (e.g. `ByteDance L2-1 backend engineer`), personality tags, then choose a data source. All fields can be skipped — even a description alone can generate a Skill.
-
-Once created, invoke the colleague Skill with `/{slug}`.
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/list-colleagues` | List all colleague Skills |
-| `/{slug}` | Invoke full Skill (Persona + Work) |
-| `/{slug}-work` | Work capabilities only |
-| `/{slug}-persona` | Persona only |
-| `/colleague-rollback {slug} {version}` | Rollback to a previous version |
-| `/delete-colleague {slug}` | Delete |
-
----
-
-## Demo
-
-> Input: `ByteDance L2-1 backend engineer, INTJ, blame-shifter, ByteDance-style`
-
-**Scenario 1: Code Review**
+## 工作流程
 
 ```
-User            ❯ Can you review this API design?
-
-colleague.skill ❯ Hold on — what's the impact? You haven't explained the context.
-                  (after reading) N+1 query, fix it. Use the standard
-                  {code, message, data} response format. That's the spec,
-                  don't ask why.
+用户提供角色名 + 所属小说
+        ↓
+提供 TXT 原著文件路径（或直接粘贴文本片段）
+        ↓
+novel_parser.py 提取该角色的相关段落
+        ↓
+character_distiller.py 调用 Gemini API 分析
+        ↓
+生成 characters/{slug}/
+    ├── meta.json      # 基本信息
+    ├── persona.md     # 性格层（供 AI 扮演使用）
+    └── profile.md     # 人物志（完整背景资料）
 ```
 
-**Scenario 2: Blame game**
+## 目录结构
 
 ```
-User            ❯ This bug was introduced by you, right?
-
-colleague.skill ❯ Does the timeline match? That feature touched multiple places,
-                  there were other changes too.
+character-skill/
+├── SKILL.md                        # Skill 主入口
+├── prompts/
+│   ├── intake.md                   # 信息采集流程
+│   ├── persona_analyzer.md         # 性格分析提示词
+│   ├── persona_builder.md          # 性格层构建
+│   ├── work_analyzer.md            # 行为模式分析
+│   ├── work_builder.md             # 行为层构建
+│   ├── merger.md                   # 进化合并逻辑
+│   ├── correction_handler.md       # 纠错处理
+│   └── whatif_guide.md             # 番外创作指引
+├── tools/
+│   ├── novel_parser.py             # TXT 原著解析与角色文本提取
+│   ├── character_distiller.py      # Gemini API 调用与蒸馏
+│   ├── skill_writer.py             # 设定卡写入与更新
+│   └── version_manager.py         # 版本管理
+└── characters/                     # 生成的人物设定卡（gitignore 建议）
+    └── {slug}/
+        ├── meta.json
+        ├── persona.md
+        └── profile.md
 ```
 
----
+## 提供原著文本的方式
 
-## Features
-
-### Generated Skill Structure
-
-Each colleague Skill has two parts that work together:
-
-| Part | Content |
-|------|---------|
-| **Part A — Work Skill** | Systems, tech standards, workflows, experience |
-| **Part B — Persona** | 5-layer personality: hard rules → identity → expression → decisions → interpersonal |
-
-Execution: `Receive task → Persona decides attitude → Work Skill executes → Output in their voice`
-
-### Supported Tags
-
-**Personality**: Responsible · Blame-shifter · Perfectionist · Good-enough · Procrastinator · PUA master · Office politician · Managing-up expert · Passive-aggressive · Flip-flopper · Quiet · Read-no-reply …
-
-**Corporate culture**: ByteDance-style · Alibaba-style · Tencent-style · Huawei-style · Baidu-style · Meituan-style · First-principles · OKR-obsessed · Big-corp-pipeline · Startup-mode
-
-**Levels**: ByteDance 2-1~3-3+ · Alibaba P5~P11 · Tencent T1~T4 · Baidu T5~T9 · Meituan P4~P8 · Huawei 13~21 · NetEase · JD · Xiaomi …
-
-### Evolution
-
-- **Append files** → auto-analyze delta → merge into relevant sections, never overwrite existing conclusions
-- **Conversation correction** → say "he wouldn't do that, he should be xxx" → writes to Correction layer, takes effect immediately
-- **Version control** → auto-archive on every update, rollback to any previous version
-
----
-
-## Project Structure
-
-This project follows the [AgentSkills](https://agentskills.io) open standard. The entire repo is a skill directory:
+**推荐：TXT 文件路径**
 
 ```
-create-colleague/
-├── SKILL.md              # Skill entry point (official frontmatter)
-├── prompts/              # Prompt templates
-│   ├── intake.md         #   Dialogue-based info collection
-│   ├── work_analyzer.md  #   Work capability extraction
-│   ├── persona_analyzer.md #  Personality extraction (with tag translation)
-│   ├── work_builder.md   #   work.md generation template
-│   ├── persona_builder.md #   persona.md 5-layer structure
-│   ├── merger.md         #   Incremental merge logic
-│   └── correction_handler.md # Conversation correction handler
-├── tools/                # Python tools
-│   ├── feishu_auto_collector.py  # Feishu auto-collector
-│   ├── feishu_browser.py         # Feishu browser method
-│   ├── feishu_mcp_client.py      # Feishu MCP method
-│   ├── dingtalk_auto_collector.py # DingTalk auto-collector
-│   ├── slack_auto_collector.py   # Slack auto-collector
-│   ├── email_parser.py           # Email parser
-│   ├── skill_writer.py           # Skill file management
-│   └── version_manager.py        # Version archive & rollback
-├── colleagues/           # Generated colleague Skills (gitignored)
-├── docs/PRD.md
-├── requirements.txt
-└── LICENSE
+告诉我 TXT 文件路径，例如：/Users/you/novels/某某小说.txt
 ```
 
----
+对于大文件（500 章以上），可先查看章节结构再指定范围：
 
-## Notes
+```bash
+python3 tools/novel_parser.py --file 小说.txt --character "角色名" --list-chapters
+```
 
-- **Source material quality = Skill quality**: chat logs + long docs > manual description only
-- Prioritize collecting: long-form writing **by them** > **decision-making replies** > casual messages
-- Feishu auto-collection requires adding the App bot to relevant group chats
-- This is still a demo version — please file issues if you find bugs!
+**备选：直接粘贴文本片段**
 
----
-### 📄 Technical Report
+粘贴你认为最能体现该角色的段落，支持多次追加。
 
-> **[Colleague.Skill: Automated AI Skill Generation via Expert Knowledge Distillation](colleague_skill.pdf)**
->
-> We wrote a paper detailing the system design of colleague.skill — the two-part architecture (Work Skill + Persona), multi-source data collection, Skill generation & evolution mechanisms, and evaluation results in real-world scenarios. Check it out if you're interested!
+## License
 
----
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=titanwings%2Fcolleague-skill&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=titanwings/colleague-skill&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=titanwings/colleague-skill&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=titanwings/colleague-skill&type=date&legend=top-left" />
- </picture>
-</a>
-
----
-
-<div align="center">
-
-MIT License © [titanwings](https://github.com/titanwings)
-
-</div>
+MIT
