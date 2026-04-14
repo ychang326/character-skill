@@ -1,359 +1,228 @@
 #!/usr/bin/env python3
 """
-小说 TXT 解析器
+小说 TXT 解析器 v2 - Gemini API 版
 
-从单个 TXT 文件（包含正文章节和番外）中提取指定角色的相关文本，
-分类为对白、行动描写、叙述描写，供后续蒸馏使用。
+把 TXT 文件切成约 80 万字的分块，每块直接发给 Gemini 1.5 Pro，
+由 AI 理解上下文后提取指定角色的全部相关内容（含代称、上下文推断）。
+
+环境变量：
+    GEMINI_API_KEY   必须设置
 
 用法：
-    python novel_parser.py --file novel.txt --character "张三" --output output.txt
-    python novel_parser.py --file novel.txt --character "张三" --aliases "阿三,三爷" --output output.txt
-    python novel_parser.py --file novel.txt --character "张三" --list-chapters
-    python novel_parser.py --file novel.txt --character "张三" --chapters "1-50" --output output.txt
-    python novel_parser.py --file novel.txt --character "张三" --arc "番外" --output output.txt
+    python novel_parser.py --file novel.txt --character "林致远" \\
+        --aliases "致远,Alan,林总,小林总" --output output.txt
+
+    python novel_parser.py --file novel.txt --character "林致远" --list-chunks
 """
 
+import os
 import re
 import sys
+import time
 import argparse
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Optional
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except ImportError:
+    print("错误：请先安装依赖：pip install google-genai", file=sys.stderr)
+    sys.exit(1)
 
 
-# ── 数据结构 ──────────────────────────────────────────────────────────────────
+# ── 常量 ──────────────────────────────────────────────────────────────────────
 
-@dataclass
-class Chapter:
-    index: int          # 章节序号（正文从 1 开始，番外单独计数）
-    title: str          # 章节标题原文
-    arc: str            # "正文" 或 番外名称
-    start: int          # 在原文中的起始行号
-    end: int            # 在原文中的结束行号（exclusive）
-    lines: list[str] = field(default_factory=list)
+DEFAULT_CHUNK_SIZE = 800_000   # 约 80 万字/块
+GEMINI_MODEL       = "gemini-1.5-pro"
+MAX_RETRIES        = 3
+RETRY_BASE_WAIT    = 30        # 速率限制时的基础等待秒数
 
 
-@dataclass
-class Excerpt:
-    chapter_index: int
-    chapter_title: str
-    arc: str
-    line_no: int
-    category: str       # "对白" / "行动" / "叙述"
-    text: str
+# ── 文本切块 ──────────────────────────────────────────────────────────────────
 
-
-# ── 章节检测 ──────────────────────────────────────────────────────────────────
-
-# 正文章节：第X章、第X回、第X节（支持汉字数字和阿拉伯数字）
-MAIN_CHAPTER_PATTERN = re.compile(
-    r"^第\s*[零一二三四五六七八九十百千万\d]+\s*[章回节][\s　]*(.*)$"
-)
-
-# 番外检测：番外/外传/if线/特别篇 + 序号或标题
-EXTRA_CHAPTER_PATTERN = re.compile(
-    r"^(番外|外传|if线|特别篇|side\s*story|extra)[\s　\d一二三四五六七八九十·.．：:\-—]*(.*)$",
-    re.IGNORECASE,
-)
-
-# 数字章节：001 标题、Chapter 1 等（辅助匹配）
-NUMERIC_CHAPTER_PATTERN = re.compile(
-    r"^(chapter\s+\d+|\d{1,4}[\s　.．、。]+\S.{0,30})$",
-    re.IGNORECASE,
-)
-
-
-def detect_arc(title: str) -> str:
-    """判断章节属于正文还是哪类番外"""
-    if EXTRA_CHAPTER_PATTERN.match(title.strip()):
-        return "番外"
-    return "正文"
-
-
-def split_chapters(lines: list[str]) -> list[Chapter]:
-    """将全文行列表切分为章节列表"""
-    chapters: list[Chapter] = []
-    current_start = 0
-    current_title = "（前言/目录）"
-    current_arc = "正文"
-    main_index = 0
-    extra_index = 0
-
-    def flush(end: int):
-        nonlocal main_index, extra_index
-        if current_arc == "正文":
-            main_index += 1
-            idx = main_index
-        else:
-            extra_index += 1
-            idx = extra_index
-        ch = Chapter(
-            index=idx,
-            title=current_title,
-            arc=current_arc,
-            start=current_start,
-            end=end,
-            lines=lines[current_start:end],
-        )
-        chapters.append(ch)
-
-    for i, raw in enumerate(lines):
-        # strip ASCII whitespace AND ideographic space \u3000 (全角空格),
-        # which Python's built-in strip() does not remove but appears as
-        # indentation in many downloaded novel TXT files from chapter 45+
-        line = raw.strip().strip('\u3000').strip()
-        if not line:
-            continue
-
-        is_chapter = (
-            MAIN_CHAPTER_PATTERN.match(line)
-            or EXTRA_CHAPTER_PATTERN.match(line)
-            or NUMERIC_CHAPTER_PATTERN.match(line)
-        )
-
-        if is_chapter and i > current_start:
-            flush(i)
-            current_start = i
-            current_title = line
-            current_arc = detect_arc(line)
-
-    # 最后一章
-    if current_start < len(lines):
-        flush(len(lines))
-
-    return chapters
-
-
-# ── 对白提取 ──────────────────────────────────────────────────────────────────
-
-# 中文书名号对白："..."（支持嵌套引号）
-DIALOGUE_QUOTED = re.compile(r'[""「『]([^""」』]{2,200})[""」』]')
-
-# 显式归属对白：人名：/人名说/人名道/人名问/人名答
-DIALOGUE_ATTRIBUTED = re.compile(
-    r'(.{1,8})[：:](说|道|问|答|笑道|冷声|低声|沉声|厉声|柔声|淡淡地说|轻声)?\s*[""「『]?(.{2,200})[""」』]?'
-)
-
-
-def extract_dialogues_for_character(
-    lines: list[str],
-    names: set[str],
-    window: int = 3,
-) -> list[tuple[int, str]]:
+def split_chunks(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[str]:
     """
-    提取角色对白。
-    策略：
-    1. 同一行内 名字 + 引号内容 → 直接归属
-    2. 引号内容前后 window 行内出现角色名 → 归属
-    返回 (行号, 对白文本) 列表。
+    按字数上限切块，优先在段落边界（连续空行/单空行）处断开，
+    避免切断句子或对话段落。
     """
-    results = []
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            continue
+    if len(text) <= chunk_size:
+        return [text]
 
-        # 策略 1：同行有角色名 + 引号
-        has_name = any(n in line for n in names)
-        quotes = DIALOGUE_QUOTED.findall(line)
-        if has_name and quotes:
-            for q in quotes:
-                results.append((i, q.strip()))
-            continue
-
-        # 策略 2：引号内容 + 上下文有角色名
-        if quotes:
-            context_start = max(0, i - window)
-            context_end = min(len(lines), i + window + 1)
-            context = " ".join(lines[context_start:context_end])
-            if any(n in context for n in names):
-                for q in quotes:
-                    results.append((i, q.strip()))
-
-    return results
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        if end < len(text):
+            # 优先找双换行（段落间），退而求其次找单换行
+            cut = text.rfind("\n\n", start, end)
+            if cut == -1 or cut <= start:
+                cut = text.rfind("\n", start, end)
+            if cut > start:
+                end = cut + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 
-# ── 行动/叙述提取 ────────────────────────────────────────────────────────────
+# ── Gemini 提示词 ─────────────────────────────────────────────────────────────
 
-# 常见行动动词（角色主语 + 行动）
-ACTION_VERBS = re.compile(
-    r"(走向|转身|拔出|挥出|纵身|抬起|低下|握住|放开|攻向|挡住|逃离|冲向|踢飞|"
-    r"斩断|抓住|松开|跳起|落下|俯身|仰头|皱眉|闭眼|睁眼|起身|坐下|跪地|站起)"
-)
+EXTRACT_PROMPT = """\
+你是一个小说人物素材提取助手。以下是一段中文小说文本（第 {idx}/{total} 块）。
 
-# 心理/情绪描写（叙述类）
-EMOTION_VERBS = re.compile(
-    r"(想到|意识到|明白|知道|感觉|觉得|心中|心里|脑海|眼眶|嘴角|眸光|神色|表情|眼神|"
-    r"心跳|呼吸|手指|身体|脸色|唇角)"
-)
+请从中提取所有与角色【{character}】相关的内容。
 
+该角色的别称和常见代称包括：{aliases}。
+提取范围：
+- 直接使用上述名称的句子
+- 通过上下文能确认主语是该角色的句子（如"他""男人""那个人"等代称，
+  在上下文明确指向该角色时也要提取）
 
-def extract_narrative_for_character(
-    lines: list[str],
-    names: set[str],
-) -> list[tuple[int, str, str]]:
-    """
-    提取包含角色名的非对白行，分类为 行动 / 叙述。
-    返回 (行号, 分类, 文本) 列表。
-    """
-    results = []
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if not any(n in stripped for n in names):
-            continue
-        # 跳过纯引号行（已由对白提取处理）
-        if DIALOGUE_QUOTED.search(stripped) and not ACTION_VERBS.search(stripped):
-            continue
+输出格式（严格按三个 ### 标题分节，每条单独一行）：
 
-        if ACTION_VERBS.search(stripped):
-            category = "行动"
-        elif EMOTION_VERBS.search(stripped):
-            category = "叙述"
-        else:
-            category = "叙述"
+### 对白
+该角色说出的话。
+格式：[简短场景说明] "对白内容"
 
-        results.append((i, category, stripped))
+### 行动
+该角色的具体行动、动作描写。
+格式：[简短场景说明] 行动内容
 
-    return results
+### 叙述
+关于该角色的心理活动、外貌、性格刻画、人际关系描写。
+格式：[简短场景说明] 叙述内容
+
+若某类确实没有内容，写一行"（无）"。
+宁可多提取也不要遗漏，但每条必须与该角色直接相关。
+
+---
+{text}"""
 
 
-# ── 主提取流程 ────────────────────────────────────────────────────────────────
+# ── Gemini 调用（含重试） ──────────────────────────────────────────────────────
 
-def extract_character(
-    chapters: list[Chapter],
-    names: set[str],
-    arc_filter: Optional[str] = None,
-    chapter_range: Optional[tuple[int, int]] = None,
-) -> list[Excerpt]:
-    """
-    从章节列表中提取角色相关文本。
-    arc_filter: "正文" 或 "番外"（None 表示全部）
-    chapter_range: (起始章节序号, 结束章节序号)，包含两端
-    """
-    excerpts: list[Excerpt] = []
-
-    for ch in chapters:
-        # 弧段过滤
-        if arc_filter:
-            if arc_filter == "番外" and ch.arc == "正文":
-                continue
-            if arc_filter == "正文" and ch.arc != "正文":
-                continue
-
-        # 章节范围过滤
-        if chapter_range and ch.arc == "正文":
-            lo, hi = chapter_range
-            if not (lo <= ch.index <= hi):
-                continue
-
-        # 提取对白
-        for line_no, text in extract_dialogues_for_character(ch.lines, names):
-            excerpts.append(Excerpt(
-                chapter_index=ch.index,
-                chapter_title=ch.title,
-                arc=ch.arc,
-                line_no=ch.start + line_no,
-                category="对白",
-                text=text,
-            ))
-
-        # 提取行动/叙述
-        for line_no, category, text in extract_narrative_for_character(ch.lines, names):
-            # 去重：如果这行已经被对白提取，跳过
-            if any(e.line_no == ch.start + line_no and e.category == "对白" for e in excerpts):
-                continue
-            excerpts.append(Excerpt(
-                chapter_index=ch.index,
-                chapter_title=ch.title,
-                arc=ch.arc,
-                line_no=ch.start + line_no,
-                category=category,
-                text=text,
-            ))
-
-    return excerpts
-
-
-# ── 输出格式化 ────────────────────────────────────────────────────────────────
-
-def format_output(
-    character_name: str,
-    excerpts: list[Excerpt],
-    total_chapters: int,
+def call_gemini(
+    client: "genai.Client",
+    prompt: str,
+    chunk_idx: int,
+    total: int,
 ) -> str:
-    dialogues = [e for e in excerpts if e.category == "对白"]
-    actions = [e for e in excerpts if e.category == "行动"]
-    narratives = [e for e in excerpts if e.category == "叙述"]
+    """调用 Gemini，遇速率限制自动退避重试。"""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            print(
+                f"  → 第 {chunk_idx}/{total} 块，第 {attempt} 次调用...",
+                file=sys.stderr,
+            )
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            return response.text
+        except Exception as exc:
+            err = str(exc).lower()
+            is_rate_limit = any(k in err for k in ("quota", "rate", "429", "resource_exhausted"))
+            if is_rate_limit and attempt < MAX_RETRIES:
+                wait = RETRY_BASE_WAIT * attempt
+                print(f"  速率限制，等待 {wait}s 后重试...", file=sys.stderr)
+                time.sleep(wait)
+            elif attempt < MAX_RETRIES:
+                print(f"  第 {attempt} 次失败：{exc}，5s 后重试...", file=sys.stderr)
+                time.sleep(5)
+            else:
+                raise RuntimeError(
+                    f"第 {chunk_idx} 块调用失败（已重试 {MAX_RETRIES} 次）：{exc}"
+                ) from exc
+    # unreachable, but satisfies type checkers
+    raise RuntimeError("unexpected exit from retry loop")
 
-    lines = [
-        f"# 角色文本提取结果",
-        f"目标角色：{character_name}",
-        f"总章节数：{total_chapters}",
+
+# ── 结果合并 ──────────────────────────────────────────────────────────────────
+
+_SECTION_RE = re.compile(r"^###\s*(对白|行动|叙述)\s*$", re.MULTILINE)
+
+
+def merge_results(character: str, chunk_results: list[str]) -> str:
+    """把各块的提取结果合并为最终输出文件。"""
+    dialogues:  list[str] = []
+    actions:    list[str] = []
+    narratives: list[str] = []
+
+    for raw in chunk_results:
+        parts = _SECTION_RE.split(raw)
+        # split 结果：[前缀, 节名, 内容, 节名, 内容, ...]
+        i = 1
+        while i + 1 < len(parts):
+            section = parts[i].strip()
+            content = parts[i + 1]
+            lines = [
+                ln.strip()
+                for ln in content.splitlines()
+                if ln.strip() and ln.strip() != "（无）"
+            ]
+            if section == "对白":
+                dialogues.extend(lines)
+            elif section == "行动":
+                actions.extend(lines)
+            elif section == "叙述":
+                narratives.extend(lines)
+            i += 2
+
+    out: list[str] = [
+        "# 角色文本提取结果（Gemini AI）",
+        f"目标角色：{character}",
         f"提取数量：对白 {len(dialogues)} 条 / 行动 {len(actions)} 条 / 叙述 {len(narratives)} 条",
         "",
         "---",
         "",
         "## 一、对白（语言风格权重最高）",
         "",
-    ]
-    for e in dialogues:
-        lines.append(f"[{e.arc} {e.chapter_title}] {e.text}")
-    lines.append("")
-
-    lines += [
+        *dialogues,
+        "",
         "---",
         "",
         "## 二、行动描写（决策模式参考）",
         "",
-    ]
-    for e in actions:
-        lines.append(f"[{e.arc} {e.chapter_title}] {e.text}")
-    lines.append("")
-
-    lines += [
+        *actions,
+        "",
         "---",
         "",
         "## 三、叙述描写（性格/心理参考）",
         "",
+        *narratives[:500],   # 叙述取前 500 条，避免文件过大
     ]
-    for e in narratives[:300]:   # 叙述取前 300 条，避免过长
-        lines.append(f"[{e.arc} {e.chapter_title}] {e.text}")
-
-    return "\n".join(lines)
-
-
-def format_chapters_list(chapters: list[Chapter]) -> str:
-    lines = [f"共检测到 {len(chapters)} 个章节：\n"]
-    for ch in chapters:
-        lines.append(f"  [{ch.arc}] 第{ch.index}章  {ch.title}  （原文行 {ch.start+1}-{ch.end}）")
-    return "\n".join(lines)
+    return "\n".join(out)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-def parse_chapter_range(s: str) -> tuple[int, int]:
-    parts = s.split("-")
-    if len(parts) == 2:
-        return int(parts[0]), int(parts[1])
-    n = int(parts[0])
-    return n, n
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="小说 TXT 角色文本提取器（Gemini AI 版）",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例：
+  python novel_parser.py --file 碧荷.txt --character "林致远" \\
+      --aliases "致远,Alan,Alan Lin,林总,小林总" --output linzhiyuan.txt
 
-
-def main():
-    parser = argparse.ArgumentParser(description="小说 TXT 角色文本提取器")
-    parser.add_argument("--file", required=True, help="小说 TXT 文件路径")
-    parser.add_argument("--character", required=True, help="目标角色主名")
-    parser.add_argument("--aliases", default="", help="别名列表，逗号分隔（例：阿三,三爷）")
-    parser.add_argument("--arc", default=None, choices=["正文", "番外"], help="只提取正文或番外")
-    parser.add_argument("--chapters", default=None, help="章节范围（仅正文），格式：1-50 或 30")
-    parser.add_argument("--list-chapters", action="store_true", help="只列出章节结构，不提取内容")
-    parser.add_argument("--output", default=None, help="输出文件路径（默认打印到 stdout）")
-    parser.add_argument("--encoding", default="utf-8", help="文件编码（默认 utf-8，可改为 gbk）")
+  python novel_parser.py --file 碧荷.txt --character "林致远" --list-chunks
+""",
+    )
+    parser.add_argument("--file",       required=True, help="小说 TXT 文件路径")
+    parser.add_argument("--character",  required=True, help="目标角色主名")
+    parser.add_argument("--aliases",    default="",
+                        help="别名/代称列表，逗号分隔（例：致远,Alan,林总）")
+    parser.add_argument("--output",     default=None,
+                        help="输出文件路径（默认打印到 stdout）")
+    parser.add_argument("--encoding",   default="utf-8",
+                        help="文件编码（默认 utf-8，可改为 gbk）")
+    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE,
+                        help=f"每块字数上限（默认 {DEFAULT_CHUNK_SIZE:,}）")
+    parser.add_argument("--list-chunks", action="store_true",
+                        help="只显示分块信息，不调用 API")
 
     args = parser.parse_args()
 
+    # ── 读取文件 ──
     file_path = Path(args.file)
     if not file_path.exists():
         print(f"错误：文件不存在 {file_path}", file=sys.stderr)
@@ -366,41 +235,61 @@ def main():
         print(f"警告：{args.encoding} 解码失败，尝试 {fallback}", file=sys.stderr)
         text = file_path.read_text(encoding=fallback)
 
-    lines = text.splitlines()
-    chapters = split_chapters(lines)
+    chunks = split_chunks(text, args.chunk_size)
 
-    if args.list_chapters:
-        print(format_chapters_list(chapters))
+    # ── --list-chunks 模式：只打印分块信息 ──
+    if args.list_chunks:
+        print(f"文件：{file_path.name}")
+        print(f"总字数：{len(text):,}")
+        print(f"分块数：{len(chunks)}（每块上限 {args.chunk_size:,} 字）")
+        for i, chunk in enumerate(chunks, 1):
+            # 取每块首行非空内容作为预览
+            preview = next(
+                (ln.strip()[:40] for ln in chunk.splitlines() if ln.strip()), ""
+            )
+            print(f"  第 {i} 块：{len(chunk):,} 字  首行：{preview}")
         return
 
-    # 构建角色名称集合
-    names: set[str] = {args.character}
-    if args.aliases:
-        for alias in args.aliases.split(","):
-            alias = alias.strip()
-            if alias:
-                names.add(alias)
+    # ── 初始化 Gemini ──
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("错误：请先设置环境变量 GEMINI_API_KEY", file=sys.stderr)
+        sys.exit(1)
 
-    chapter_range = None
-    if args.chapters:
-        chapter_range = parse_chapter_range(args.chapters)
+    client = genai.Client(api_key=api_key)
 
-    excerpts = extract_character(
-        chapters,
-        names,
-        arc_filter=args.arc,
-        chapter_range=chapter_range,
-    )
+    # ── 构建别称字符串 ──
+    alias_list = [args.character]
+    for a in args.aliases.split(","):
+        a = a.strip()
+        if a and a != args.character:
+            alias_list.append(a)
+    aliases_str = "、".join(alias_list)
 
-    if not excerpts:
-        print(f"警告：未找到角色 '{args.character}' 的相关文本", file=sys.stderr)
-        print("提示：请检查角色名称是否与文本中的写法完全一致；可用 --list-chapters 查看章节结构", file=sys.stderr)
+    # ── 逐块提取 ──
+    total = len(chunks)
+    print(f"目标角色：{args.character}  别称：{aliases_str}", file=sys.stderr)
+    print(f"文件：{file_path.name}  总字数：{len(text):,}  分块：{total} 块", file=sys.stderr)
 
-    output = format_output(args.character, excerpts, len(chapters))
+    results: list[str] = []
+    for i, chunk in enumerate(chunks, 1):
+        prompt = EXTRACT_PROMPT.format(
+            idx=i,
+            total=total,
+            character=args.character,
+            aliases=aliases_str,
+            text=chunk,
+        )
+        result = call_gemini(client, prompt, i, total)
+        results.append(result)
+        print(f"  ✓ 第 {i}/{total} 块完成", file=sys.stderr)
+
+    # ── 合并输出 ──
+    output = merge_results(args.character, results)
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
-        print(f"已输出到 {args.output}，共提取 {len(excerpts)} 条文本")
+        print(f"\n已输出到 {args.output}", file=sys.stderr)
     else:
         print(output)
 
